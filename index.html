@@ -1,68 +1,72 @@
-<!-- comment -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Creador de Rutas con Zonas de Exclusión</title>
+    <title>Buscador de Rutas con Evitación de Zonas</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f9; }
-        h2 { color: #333; }
-        #controls { margin-bottom: 15px; display: flex; gap: 10px; }
-        button { padding: 10px 15px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        html, body { height: 100%; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f4f9; }
+        #app-container { display: flex; flex-direction: column; height: 100vh; }
+        #sidebar { padding: 15px; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 10px; z-index: 10; }
+        .input-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 12px; font-weight: bold; color: #555; text-transform: uppercase; }
+        input { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .btn-container { display: flex; gap: 10px; margin-top: 5px; }
+        button { flex: 1; padding: 10px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; }
         button:hover { background-color: #1557b0; }
-        #map { height: 600px; width: 100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        #map { width: 100%; flex-grow: 1; background-color: #e5e3df; }
+        .instructions { font-size: 13px; color: #666; margin: 0; line-height: 1.4; }
     </style>
 </head>
 <body>
 
-    <h2>Calculador de Rutas Personalizadas</h2>
-    <div id="controls">
-        <button onclick="calcularRuta()">1. Calcular Ruta</button>
-        <button onclick="limpiarMapa()" style="background-color: #d93025;">Limpiar Todo</button>
+    <div id="app-container">
+        <div id="sidebar">
+            <p class="instructions">
+                <strong>Instrucciones:</strong> Escribe origen y destino. Si quieres evitar zonas, haz clic en el icono de la caja gris arriba en el mapa, dibuja rectángulos rojos sobre las calles y pulsa "Calcular Ruta Inteligente".
+            </p>
+            <div class="btn-container">
+                <button onclick="llamarRoutesAPI()">Calcular Ruta Inteligente</button>
+                <button onclick="limpiarMapa()" style="background-color: #d93025;">Limpiar Todo</button>
+            </div>
+        </div>
+        <div id="map"></div>
     </div>
-    
-    <!-- Contenedor del mapa -->
-    <div id="map"></div>
 
     <script>
         let map;
         let drawingManager;
-        let avoidAreas = []; // Aquí guardaremos los rectángulos dibujados
-        let directionsService;
-        let directionsRenderer;
+        let avoidAreas = []; 
+        let rutaTrazada = null;
 
-        // Puntos fijos de ejemplo (puedes cambiarlos o hacerlos dinámicos)
-        const origen = { lat: 41.3851, lng: 2.1734 };      // Barcelona Centro
-        const destino = { lat: 41.3980, lng: 2.1900 };     // Sant Martí (Cerca de tu ubicación)
+        // Coordenadas de ejemplo (Barcelona)
+        const origenCoordenadas = { lat: 41.3851, lng: 2.1734 }; 
+        const destinoCoordenadas = { lat: 41.3980, lng: 2.1900 };
+
+        const API_KEY = "TU_API_KEY_REAL"; // <-- REEMPLAZA CON TU CLAVE AQUÍ PARA LAS RUTAS
 
         function initMap() {
-            // 1. Inicializar el Mapa
+            // 1. Inicializar el mapa visual
             map = new google.maps.Map(document.getElementById("map"), {
-                center: origen,
-                zoom: 14,
+                center: origenCoordenadas,
+                zoom: 14
             });
 
-            // 2. Inicializar Servicios de Ruta
-            directionsService = new google.maps.DirectionsService();
-            directionsRenderer = new google.maps.DirectionsRenderer();
-            directionsRenderer.setMap(map);
+            // Marcadores visuales fijos de prueba
+            new google.maps.Marker({ position: origenCoordenadas, map: map, label: "Origen" });
+            new google.maps.Marker({ position: destinoCoordenadas, map: map, label: "Destino" });
 
-            // Colocar marcadores visuales de inicio y fin
-            new google.maps.Marker({ position: origen, map: map, label: "A" });
-            new google.maps.Marker({ position: destino, map: map, label: "B" });
-
-            // 3. Configurar Herramientas de Dibujo
+            // 2. Configurar la barra de dibujo superior
             drawingManager = new google.maps.visualization.drawing.DrawingManager({
-                drawingMode: null, // Comienza en modo navegación normal
+                drawingMode: null,
                 drawingControl: true,
                 drawingControlOptions: {
                     position: google.maps.ControlPosition.TOP_CENTER,
-                    drawingModes: [google.maps.visualization.drawing.OverlayType.RECTANGLE], // Usamos rectángulos por simplicidad
+                    drawingModes: [google.maps.visualization.drawing.OverlayType.RECTANGLE],
                 },
                 rectangleOptions: {
                     fillColor: "#ff0000",
-                    fillOpacity: 0.3,
+                    fillOpacity: 0.35,
                     strokeWeight: 2,
                     strokeColor: "#ff0000",
                     editable: true,
@@ -71,24 +75,19 @@
             });
             drawingManager.setMap(map);
 
-            // 4. Capturar el evento cuando el usuario termina de dibujar un rectángulo
+            // Almacenar las zonas prohibidas cuando el usuario las dibuje
             google.maps.event.addListener(drawingManager, 'rectanglecomplete', function(rectangle) {
                 avoidAreas.push(rectangle);
-                // Si el usuario edita el rectángulo después de dibujarlo, se actualiza automáticamente
-                google.maps.event.addListener(rectangle, 'bounds_changed', function() {
-                    console.log("Zona actualizada");
-                });
             });
         }
 
-        // Función para procesar las zonas y pedir la ruta a Google
-        function calcularRuta() {
-            // Extraer las coordenadas estructuradas de cada rectángulo dibujado
-            const areasProhibidas API = avoidAreas.map(rect => {
+        // 3. Conexión real con la avanzada "Google Routes API"
+        async function llamarRoutesAPI() {
+            // Procesar los rectángulos dibujados al formato exacto que exige Google Routes API
+            const areasParaEvitar = avoidAreas.map(rect => {
                 const bounds = rect.getBounds();
                 const ne = bounds.getNorthEast();
                 const sw = bounds.getSouthWest();
-                
                 return {
                     rectangle: {
                         upperLeft: { latitude: ne.lat(), longitude: sw.lng() },
@@ -97,36 +96,74 @@
                 };
             });
 
-            // Configuración de la solicitud usando las restricciones nativas de DirectionsRequest
-            const request = {
-                origin: origen,
-                destination: destino,
-                travelMode: google.maps.TravelMode.DRIVING,
-                // NOTA: Para usar 'avoidAreas' poligonales avanzadas en tiempo real en la web,
-                // la API de JavaScript tradicional requiere pasar los datos procesados.
+            // Construcción del JSON según la documentación oficial de Routes API
+            const cuerpoPeticion = {
+                origin: { location: { latLng: { latitude: origenCoordenadas.lat, longitude: origenCoordenadas.lng } } },
+                destination: { location: { latLng: { latitude: destinoCoordenadas.lat, longitude: destinoCoordenadas.lng } } },
+                travelMode: "DRIVE",
+                routingPreference: "TRAFFIC_AWARE",
+                routeModifiers: {
+                    avoidTolls: false,
+                    avoidHighways: false,
+                    avoidFerries: false,
+                    avoidAreas: areasParaEvitar // Aquí se inyectan tus rectángulos dibujados
+                }
             };
 
-            // Ejecutar la búsqueda de ruta tradicional o enviar los datos a tu backend con Routes API
-            directionsService.route(request, function(response, status) {
-                if (status === 'OK') {
-                    directionsRenderer.setDirections(response);
-                    if(areasProhibidasAPI.length > 0) {
-                        alert("Zonas capturadas listas para enviar a Routes API: " + JSON.stringify(areasProhibidasAPI));
-                    }
+            try {
+                // LLamada HTTP POST directa a los servidores de rutas de Google
+                const respuesta = await fetch("https://googleapis.com", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Goog-Api-Key": API_KEY,
+                        // Le decimos a Google qué campos queremos que nos devuelva (la línea geométrica codificada)
+                        "X-Goog-FieldMask": "routes.polyline.encodedPolyline"
+                    },
+                    body: JSON.stringify(cuerpoPeticion)
+                });
+
+                const data = await respuesta.json();
+
+                if (data.routes && data.routes.length > 0) {
+                    // Borrar ruta anterior si existía
+                    if (rutaTrazada) rutaTrazada.setMap(null);
+
+                    // Decodificar la línea de camino devuelta por Google y pintarla en el mapa
+                    const rutaCodificada = data.routes[0].polyline.encodedPolyline;
+                    const caminoDecodificado = google.maps.geometry.encoding.decodePath(rutaCodificada);
+
+                    rutaTrazada = new google.maps.Polyline({
+                        path: caminoDecodificado,
+                        geodesic: true,
+                        strokeColor: "#1a73e8",
+                        strokeOpacity: 0.8,
+                        strokeWeight: 6
+                    });
+
+                    rutaTrazada.setMap(map);
                 } else {
-                    alert("Error al calcular la ruta: " + status);
+                    alert("Google no pudo encontrar una ruta alternativa que esquive tus zonas prohibidas.");
                 }
-            });
+
+            } catch (error) {
+                console.error("Error al conectar con la Routes API:", error);
+                alert("Hubo un error en la conexión. Revisa la consola.");
+            }
         }
 
         function limpiarMapa() {
             avoidAreas.forEach(rect => rect.setMap(null));
             avoidAreas = [];
-            directionsRenderer.setDirections({routes: []});
+            if (rutaTrazada) {
+                rutaTrazada.setMap(null);
+                rutaTrazada = null;
+            }
         }
     </script>
 
-    <!-- Carga de la API de Google Maps con las librerías necesarias (drawing) -->
-    <script src="https://googleapis.com" async defer></script>
+    <!-- REEMPLAZA TU_API_KEY_REAL POR TU CLAVE PROPIA ABAJO TAMBIÉN -->
+    <!-- Se incluye obligatoriamente '&libraries=drawing,geometry' para poder decodificar la ruta y dibujar -->
+    <script src="https://googleapis.com&key=AIzaSyDooZld0POFj7rEnjVWY_hGAxY9Yd9YT-k&libraries=drawing,geometry" async defer></script>
 </body>
 </html>
