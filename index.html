@@ -56,6 +56,8 @@
             new google.maps.Marker({ position: origenCoordenadas, map: map, label: "Origen" });
             new google.maps.Marker({ position: destinoCoordenadas, map: map, label: "Destino" });
 
+            if (!google.maps.visualization) google.maps.visualization = {};
+
             // 2. Configurar la barra de dibujo superior
             drawingManager = new google.maps.visualization.drawing.DrawingManager({
                 drawingMode: null,
@@ -164,6 +166,6 @@
 
     <!-- REEMPLAZA API_KEY POR TU CLAVE PROPIA ABAJO TAMBIÉN -->
     <!-- Se incluye obligatoriamente '&libraries=drawing,geometry' para poder decodificar la ruta y dibujar -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDooZld0POFj7rEnjVWY_hGAxY9Yd9YT-k&libraries=drawing,geometry&callback=initMap" async defer></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDooZld0POFj7rEnjVWY_hGAxY9Yd9YT-k&libraries=drawing,geometry&callback=initMap"></script>
 </body>
 </html>
